@@ -28,8 +28,19 @@ app.get( [ '/', 'healthcheck' ], function( req, res ) {
 app.post( '/compile', function( req, res ) {
 	var result = ''; // this will become the compiled css.
 
+	// check that the request came from a trusted source ( not foolproof )
+	if( env.get( 'SHARED_SECRET' ) !== res.param( 'secret' ) ) {
+		res.status( 400 ).jsonp({
+			errors: [{
+				message: 'Request requires authentication.',
+				code: 400
+			}]
+		});
+	}
+
 	// magical shite here
 
+	// send back the css
 	res.send( result );
 });
 
