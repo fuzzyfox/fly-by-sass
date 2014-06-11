@@ -85,6 +85,11 @@ app.post( '/compile', function( req, res ) {
 	// clear hash from pending queue
 	var pendingIdx = pending.indexOf( req.param( 'hash' ) );
 	pending.splice( pendingIdx, 1 );
+
+	// delete temp file after 1min
+	setTimeout( function() {
+		fs.unlink( req.param( 'hash' ) + '.css' );
+	}, 60000 );
 });
 
 // spin up the server
