@@ -40,7 +40,7 @@ function waitOnTemp( hash, done ) {
 	}
 
 	// file written, read it and send it
-	var result = fs.readFileSync( hash + '.css', 'utf-8' );
+	var result = fs.readFileSync( './tmp/' + hash + '.css', 'utf-8' );
 	done( result );
 }
 
@@ -88,7 +88,7 @@ app.post( '/compile', function( req, res ) {
 
 	// delete temp file after 1min
 	setTimeout( function() {
-		fs.unlink( req.param( 'hash' ) + '.css' );
+		fs.unlink( './tmp/' + req.param( 'hash' ) + '.css' );
 	}, 60000 );
 });
 
