@@ -75,7 +75,7 @@ app.post( '/compile', function( req, res ) {
 		- get default variables for the theme
 		- generate overrides for this hash
 		- generate import for rest of theme
-		- write a temp-file to compile ( {hash}.css )
+		- write a temp-file to compile ( ./tmp/{hash}.css ) (do it synchoronously)
 		- return the compiled output to user ( hint: use result )
 	 */
 
