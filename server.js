@@ -2,6 +2,8 @@
 
 var express = require( 'express' );
 var morgan = require( 'morgan' );
+var dotenv = require('dotenv');
+dotenv.load();
 var env = require( 'nconf' ).argv()
                             .env()
                             .file( { file: 'config.json' } );
@@ -19,6 +21,7 @@ var healthcheck = {
 
 // pending processes
 var pending = [];
+var cached = [];
 
 // get some debug ouptut
 if( env.get( 'debug' ) || env.get( 'DEBUG' ) ) {
@@ -26,7 +29,7 @@ if( env.get( 'debug' ) || env.get( 'DEBUG' ) ) {
 }
 
 // healthcheck info public
-app.get( [ '/', 'healthcheck' ], function( req, res ) {
+app.get( [ '/', '/healthcheck' ], function( req, res ) {
 	res.jsonp( healthcheck );
 });
 
@@ -44,13 +47,14 @@ function waitOnTemp( hash, done ) {
 	done( result );
 }
 
-// get sass variables from url
-app.post( '/compile', function( req, res ) {
+function compile( req, res, next ) {
 	var result = ''; // this will become the compiled css.
+	var pendingIdx = pending.indexOf( req.param( 'hash' ) ); // index of a pending process hash (if there is one)
+	var tmpSassFile = '';  // this will become the tmp sass file to compile
 
 	// check that the request came from a trusted source ( not foolproof )
 	if( env.get( 'SHARED_SECRET' ) !== req.param( 'secret' ) ) {
-		res.status( 400 ).jsonp({
+		return res.status( 400 ).jsonp({
 			errors: [{
 				message: 'Request requires authentication.',
 				code: 400
@@ -59,38 +63,61 @@ app.post( '/compile', function( req, res ) {
 	}
 
 	// deal w/ race conditions
-	if( pending.indexOf( req.param( 'hash' ) ) > -1 ) {
+	if( pendingIdx > -1 ) {
 		// wait for temp file w/ css to exist
 		return waitOnTemp( req.param( 'hash' ), function( result ) {
 			res.send( result );
 		});
 	}
 
+	if( cached.indexOf( req.param( 'hash' ) ) > -1 ) {
+		return res.send( fs.readFileSync( './tmp/' + req.param( 'hash' ) + '.css', 'utf-8' ) );
+	}
+
 	// set hash as pending
-	pending.push( req.param( 'hash' ) );
+	pendingIdx = pending.push( req.param( 'hash' ) ) - 1;
 
-	// magical shite here
+	// get defaults for the theme
+	tmpSassFile = fs.readFileSync( './theme/' + req.param( 'theme' ) + '/_vars.scss', 'utf-8' );
 
-	/*
-		- get default variables for the theme
-		- generate overrides for this hash
-		- generate import for rest of theme
-		- write a temp-file to compile ( ./tmp/{hash}.css ) (do it synchoronously)
-		- return the compiled output to user ( hint: use result )
-	 */
+	// generate overrides
+	var tmp = JSON.parse( req.param( 'variables' ) );
+	for( var key in tmp ) {
+		tmpSassFile += '$' + key + ': ' + tmp[ key ] + ';\n';
+	}
+
+	// include main file to compile against
+	tmpSassFile += '\n@import "./theme/' + req.param( 'theme' ) + '/base.scss";';
+
+	// render the sass
+	result = sass.renderSync({
+		data: tmpSassFile,
+		ouptutStyle: 'compressed'
+	});
+
+	// write tmp file
+	fs.writeFileSync( './tmp/' + req.param( 'hash' ) + '.css', result );
+	cached.push( req.param( 'hash' ) );
 
 	// send back the css
 	res.send( result );
 
 	// clear hash from pending queue
-	var pendingIdx = pending.indexOf( req.param( 'hash' ) );
 	pending.splice( pendingIdx, 1 );
 
 	// delete temp file after 1min
 	setTimeout( function() {
+		if( cached.indexOf( req.param( 'hash' ) ) > -1 ) {
+			cached.splice( cached.indexOf( req.param( 'hash' ) ), 1 );
+		}
 		fs.unlink( './tmp/' + req.param( 'hash' ) + '.css' );
 	}, 60000 );
-});
+}
+
+// deal w/ the routing
+app.route( '/compile' )
+	.get( compile )
+	.post( compile );
 
 // spin up the server
 var server = app.listen( env.get( 'PORT' ) || 5000, function() {
